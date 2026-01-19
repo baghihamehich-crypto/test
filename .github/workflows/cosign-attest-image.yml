@@ -1,0 +1,63 @@
+name: Build, push, and cosign-attest image
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write   # REQUIRED for keyless sigstore (OIDC)
+
+jobs:
+  build-push-attest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Log in to GHCR (GitHub Container Registry)
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      # Build and push using Docker CLI (simple + reliable)
+      - name: Build and push image
+        id: buildpush
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/myapp"
+          TAG="${{ github.sha }}"
+          docker build -t "$IMAGE:$TAG" .
+          docker push "$IMAGE:$TAG"
+
+          # Resolve digest for the pushed tag (convert tag -> immutable digest reference)
+          DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:$TAG")"
+          echo "digest_ref=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Pushed digest ref: $DIGEST"
+
+      # Install cosign
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Create a minimal provenance predicate (you can replace with real SLSA provenance later)
+      - name: Create predicate (build.json)
+        run: |
+          cat > build.json << 'EOF'
+          {
+            "buildType": "github-actions",
+            "repo": "${{ github.repository }}",
+            "workflow": "${{ github.workflow }}",
+            "ref": "${{ github.ref }}",
+            "sha": "${{ github.sha }}",
+            "run_id": "${{ github.run_id }}"
+          }
+          EOF
+
+      # Direct Sigstore attestation attached to the image digest
+      - name: Cosign attest (keyless)
+        env:
+          DIGEST_REF: ${{ steps.buildpush.outputs.digest_ref }}
+        run: |
+          cosign attest \
+            --predicate build.json \
+            --type slsaprovenance \
+            "$DIGEST_REF"
