@@ -73,7 +73,7 @@ jobs:
         env:
           DIGEST_REF: ${{ steps.buildpush.outputs.digest_ref }}
         run: |
-          cosign attest \
+          cosign attest --yes \
             --predicate build.json \
             --type slsaprovenance02 \
             "$DIGEST_REF"
