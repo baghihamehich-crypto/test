@@ -39,18 +39,34 @@ jobs:
         uses: sigstore/cosign-installer@v3
 
       # Create a minimal provenance predicate (you can replace with real SLSA provenance later)
-      - name: Create predicate (build.json)
+     
+      - name: Create SLSA v0.2 predicate (build.json)
         run: |
           cat > build.json << 'EOF'
           {
-            "buildType": "github-actions",
-            "repo": "${{ github.repository }}",
-            "workflow": "${{ github.workflow }}",
-            "ref": "${{ github.ref }}",
-            "sha": "${{ github.sha }}",
-            "run_id": "${{ github.run_id }}"
+            "builder": {
+              "id": "https://github.com/actions/runner"
+            },
+            "buildType": "https://github.com/actions/workflow",
+            "invocation": {
+              "configSource": {
+                "uri": "git+https://github.com/${{ github.repository }}@${{ github.ref }}",
+                "digest": { "sha1": "${{ github.sha }}" },
+                "entryPoint": ".github/workflows/${{ github.workflow_ref }}"
+              }
+            },
+            "metadata": {
+              "buildInvocationId": "${{ github.run_id }}"
+            },
+            "materials": [
+              {
+                "uri": "git+https://github.com/${{ github.repository }}",
+                "digest": { "sha1": "${{ github.sha }}" }
+              }
+            ]
           }
           EOF
+
 
       # Direct Sigstore attestation attached to the image digest
       - name: Cosign attest (keyless)
@@ -59,5 +75,5 @@ jobs:
         run: |
           cosign attest \
             --predicate build.json \
-            --type slsaprovenance \
+            --type slsaprovenance02 \
             "$DIGEST_REF"
