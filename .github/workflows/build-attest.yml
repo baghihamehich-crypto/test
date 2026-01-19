@@ -1,0 +1,42 @@
+name: Build tar + attest provenance
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write      # required for attestations
+  attestations: write  # required for actions/attest-build-provenance
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t myapp:latest .
+
+      - name: Save image to tar
+        run: docker save myapp:latest -o myapp.tar
+
+      - name: Compute SHA256 of tar
+        run: sha256sum myapp.tar | tee myapp.tar.sha256
+
+      - name: Upload tar as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-tar
+          path: |
+            myapp.tar
+            myapp.tar.sha256
+
+      - name: Attest build provenance (for the artifact)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: myapp.tar
+          subject-path: myapp.tar
